@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
+import { getCodexAvailability, resolveCodexKey, getCodexBaseUrl } from '@/lib/codex-support'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: { provider?: string } = {}
@@ -45,6 +46,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : msg.slice(0, 120)
       return NextResponse.json({ working: false, error: friendly })
     }
+  }
+
+  if (provider === 'codex') {
+    const setting = await prisma.setting.findUnique({ where: { key: 'codexApiKey' } })
+    const dbKey = setting?.value?.trim()
+    const availability = getCodexAvailability({ dbKey })
+
+    if (!availability.available) {
+      return NextResponse.json({
+        working: false,
+        error: 'No Codex access detected. Add a Codex API key or run inside Codex.',
+      })
+    }
+
+    // If we have a key, we could run a live check, but avoid network calls when not needed.
+    const key = resolveCodexKey({ dbKey })
+    if (key || availability.source === 'runtime') {
+      return NextResponse.json({ working: true, mode: availability.source })
+    }
+
+    // Proxy-only mode (custom base URL without explicit key)
+    if (getCodexBaseUrl()) {
+      return NextResponse.json({ working: true, mode: 'proxy' })
+    }
+
+    return NextResponse.json({ working: false, error: 'Codex is configured but no credentials were found.' })
   }
 
   return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })

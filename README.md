@@ -51,7 +51,7 @@ After the pipeline runs, you get:
 - [Node.js 18+](https://nodejs.org)
 - npm (comes with Node.js)
 
-**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed.
+**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed. Running inside Codex is supported too; add a Codex/OpenAI-compatible key in Settings or let the Codex runtime handle auth.
 
 ### Option A — One command (recommended)
 

@@ -28,6 +28,13 @@ const ANTHROPIC_MODELS = [
   { value: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Most Capable' },
 ]
 
+type ApiKeyFieldKey = 'anthropicApiKey' | 'codexApiKey'
+
+function buildHasKeyProp(fieldKey: ApiKeyFieldKey): string {
+  const base = fieldKey.replace('ApiKey', '')
+  return `has${base.charAt(0).toUpperCase()}${base.slice(1)}Key`
+}
+
 
 interface Toast {
   type: 'success' | 'error'
@@ -98,7 +105,7 @@ function ApiKeyField({
 }: {
   label: string
   placeholder: string
-  fieldKey: 'anthropicApiKey'
+  fieldKey: ApiKeyFieldKey
   hint: string
   docHref: string
   onToast: (t: Toast) => void
@@ -117,7 +124,7 @@ function ApiKeyField({
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
-        const hasKey = d['hasAnthropicKey']
+        const hasKey = d[buildHasKeyProp(fieldKey)]
         const masked = d[fieldKey] as string | null
         if (hasKey && masked) setSavedMasked(masked)
       })
@@ -428,15 +435,73 @@ function ClaudeCliStatusBox() {
   )
 }
 
+type CodexStatusState = 'loading' | 'runtime' | 'env' | 'db' | 'proxy' | 'missing'
+
+function CodexStatusBox() {
+  const [status, setStatus] = useState<CodexStatusState>('loading')
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        if (d.codexAvailable) {
+          const src = typeof d.codexSource === 'string' ? d.codexSource : ''
+          if (src === 'runtime' || src === 'env' || src === 'db' || src === 'proxy') setStatus(src)
+          else setStatus('env')
+        } else {
+          setStatus('missing')
+        }
+      })
+      .catch(() => setStatus('missing'))
+  }, [])
+
+  if (status === 'loading') return null
+
+  const tone = status === 'missing'
+    ? { className: 'bg-zinc-800/60 border border-zinc-700', icon: Terminal, iconClass: 'text-zinc-400' }
+    : { className: 'bg-indigo-500/5 border border-indigo-500/20', icon: Check, iconClass: 'text-indigo-300' }
+
+  const titleMap: Record<Exclude<CodexStatusState, 'loading'>, string> = {
+    runtime: 'Codex runtime detected — no key needed',
+    env: 'Codex API key found in environment',
+    db: 'Codex key saved locally',
+    proxy: 'Codex proxy configured',
+    missing: 'Codex runtime not detected',
+  }
+
+  const bodyMap: Record<Exclude<CodexStatusState, 'loading'>, string> = {
+    runtime: 'Running inside Codex — AI access is managed automatically. A saved key will override runtime access if set.',
+    env: 'An environment API key is available for Codex. You can still save a key below to override it.',
+    db: 'Using the Codex API key saved in your local database for AI requests.',
+    proxy: 'A Codex/OpenAI-compatible base URL is configured. Add a key below if your proxy requires one.',
+    missing: 'Enable Codex by running inside Codex or providing an API key below.',
+  }
+
+  const Icon = tone.icon
+
+  return (
+    <div className={`flex gap-3 p-3.5 rounded-xl mb-4 ${tone.className}`}>
+      <Icon size={15} className={`${tone.iconClass} shrink-0 mt-0.5`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-zinc-100">{titleMap[status]}</p>
+        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+          {bodyMap[status]}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={Key}
       title="AI Provider"
-      description="Configure your AI keys. If Claude Code CLI is installed and signed in, no key is needed."
+      description="Configure your AI keys. Supports Claude CLI plus Codex runtime or saved keys."
     >
       {/* Claude CLI auth status */}
       <ClaudeCliStatusBox />
+      <CodexStatusBox />
 
       <div className="space-y-5">
         <div>
@@ -456,6 +521,17 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             onToast={onToast}
           />
           <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Claude CLI</strong></p>
+        </div>
+        <div className="pt-4 border-t border-zinc-800">
+          <ApiKeyField
+            label="Codex (OpenAI-compatible)"
+            placeholder="sk-..."
+            fieldKey="codexApiKey"
+            hint="Use Codex runtime credentials or add an OpenAI-compatible key for Codex-managed AI access."
+            docHref="https://platform.openai.com"
+            onToast={onToast}
+            testProvider="codex"
+          />
         </div>
       </div>
       <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
